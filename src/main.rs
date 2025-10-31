@@ -61,8 +61,10 @@ enum Command {
     Upgrade,
 }
 
-impl From<Command> for Option<Config> {
-    fn from(cmd: Command) -> Self {
+impl TryFrom<Command> for Config {
+    type Error = &'static str;
+
+    fn try_from(cmd: Command) -> Result<Self, Self::Error> {
         match cmd {
             Command::Serve {
                 api_token,
@@ -70,14 +72,14 @@ impl From<Command> for Option<Config> {
                 port,
                 host,
                 bypass,
-            } => Some(Config {
+            } => Ok(Config {
                 root_id,
                 api_token,
                 port,
                 host,
                 bypass,
             }),
-            Command::Upgrade => None,
+            Command::Upgrade => Err("Cannot create Config from Upgrade command"),
         }
     }
 }
@@ -91,7 +93,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     env_logger::init_from_env(Env::default().default_filter_or("info"));
 
-    let config = Option::<Config>::from(cli.command).expect("serve command -> config");
+    let config = Config::try_from(cli.command)?;
     run(config)?;
 
     Ok(())
