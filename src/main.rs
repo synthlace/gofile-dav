@@ -1,10 +1,12 @@
-use clap::{ArgGroup, Parser};
+use clap::{ArgGroup, Parser, Subcommand};
 use env_logger::Env;
 
-use std::{net::TcpListener, sync::Arc};
+use std::net::TcpListener;
+use std::sync::Arc;
 
 mod config;
 mod gofile;
+mod upgrade;
 use anyhow::bail;
 use config::Config;
 
@@ -20,49 +22,78 @@ use tokio::sync::RwLock;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
-#[command(group(
-    ArgGroup::new("auth")
-        .args(&["root_id", "api_token"])
-        .required(true)
-))]
-pub struct Cli {
-    /// Gofile API token
-    #[arg(long, short = 't', env)]
-    pub api_token: Option<String>,
-
-    /// Root folder ID
-    #[arg(env)]
-    pub root_id: Option<String>,
-
-    /// Port for the application
-    #[arg(long, short, env, default_value_t = 4914)]
-    pub port: u16,
-
-    /// Host for the application
-    #[arg(long, env, default_value = "127.0.0.1")]
-    pub host: String,
-
-    /// Use public service gofile-bypass.cybar.xyz for downloads
-    #[arg(long, short, env)]
-    pub bypass: bool,
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
 }
 
-impl From<Cli> for Config {
-    fn from(cli: Cli) -> Self {
-        Self {
-            root_id: cli.root_id,
-            api_token: cli.api_token,
-            port: cli.port,
-            host: cli.host,
-            bypass: cli.bypass,
+#[derive(Subcommand, Debug)]
+enum Command {
+    #[command(group(
+        ArgGroup::new("auth")
+        .args(&["root_id", "api_token"])
+        .required(true)
+    ))]
+    /// Run webdav server
+    Serve {
+        /// Gofile API token
+        #[arg(long, short = 't', env)]
+        api_token: Option<String>,
+
+        /// Root folder ID
+        #[arg(env)]
+        root_id: Option<String>,
+
+        /// Port for the application
+        #[arg(long, short, env, default_value_t = 4914)]
+        port: u16,
+
+        /// Host for the application
+        #[arg(long, env, default_value = "127.0.0.1")]
+        host: String,
+
+        /// Use public service gofile-bypass.cybar.xyz for downloads
+        #[arg(long, short, env)]
+        bypass: bool,
+    },
+
+    /// Upgrade the binary
+    Upgrade,
+}
+
+impl TryFrom<Command> for Config {
+    type Error = &'static str;
+
+    fn try_from(cmd: Command) -> Result<Self, Self::Error> {
+        match cmd {
+            Command::Serve {
+                api_token,
+                root_id,
+                port,
+                host,
+                bypass,
+            } => Ok(Config {
+                root_id,
+                api_token,
+                port,
+                host,
+                bypass,
+            }),
+            Command::Upgrade => Err("Cannot create Config from Upgrade command"),
         }
     }
 }
 
-fn main() -> anyhow::Result<()> {
-    let config = Cli::parse().into();
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let cli = Cli::parse();
+
+    if let Command::Upgrade = cli.command {
+        return upgrade::self_upgrade();
+    }
+
     env_logger::init_from_env(Env::default().default_filter_or("info"));
 
+    let config = Config::try_from(cli.command)?;
     run(config)?;
 
     Ok(())
