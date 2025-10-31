@@ -20,19 +20,23 @@ A **quota bypass** is available to help with download limits for free/guest user
 
 ### Serve a folder using short id using guest account
 
-    gofile-dav Veil7n
+    gofile-dav serve Veil7n
 
 ### Serve a folder using long id using guest account
 
-    gofile-dav 6c9e22a7-7d6c-4986-8e93-b118558be0bb
+    gofile-dav serve 6c9e22a7-7d6c-4986-8e93-b118558be0bb
 
 ### Serve your root folder
 
-    gofile-dav --api-token Maie2RlOFDDDRao0Y5ll54EAtv2imUlZ
+    gofile-dav serve --api-token Maie2RlOFDDDRao0Y5ll54EAtv2imUlZ
 
 ### Serve specific folder with your token
 
-    gofile-dav Veil7n --api-token Maie2RlOFDDDRao0Y5ll54EAtv2imUlZ
+    gofile-dav serve Veil7n --api-token Maie2RlOFDDDRao0Y5ll54EAtv2imUlZ
+
+### Upgrade
+
+    gofile-dav upgrade
 
 ## Experimental
 
@@ -40,20 +44,39 @@ A **quota bypass** is available to help with download limits for free/guest user
 
 ### Serve specific folder with bypass using guest account
 
-    gofile-dav Veil7n --bypass
+    gofile-dav serve Veil7n --bypass
 
 ### Serve your root folder with bypass
 
 **Warning:** To use the bypass on your own folder you must make the folder public!
 
-    gofile-dav --bypass --api-token Maie2RlOFDDDRao0Y5ll54EAtv2imUlZ
+    gofile-dav serve --bypass --api-token Maie2RlOFDDDRao0Y5ll54EAtv2imUlZ
 
 ## Usage
+
+### `gofile-dav`
 
 ```text
 a WebDAV implementation for the gofile.io service
 
-Usage: gofile-dav [OPTIONS] <ROOT_ID|--api-token <API_TOKEN>>
+Usage: gofile-dav <COMMAND>
+
+Commands:
+  serve    Run webdav server
+  upgrade  Upgrade the binary
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
+```
+
+### `gofile-dav serve`
+
+```text
+Run webdav server
+
+Usage: gofile-dav serve [OPTIONS] <ROOT_ID|--api-token <API_TOKEN>>
 
 Arguments:
   [ROOT_ID]  Root folder ID [env: ROOT_ID=]
