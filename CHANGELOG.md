@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2](https://github.com/synthlace/gofile-dav/compare/v0.1.1...v0.1.2) - 2025-10-31
+
+### Other
+
+- fetch folder contents and bypass files concurrently ([#4](https://github.com/synthlace/gofile-dav/pull/4))
+
 ## [0.1.1](https://github.com/synthlace/gofile-dav/compare/v0.1.0...v0.1.1) - 2025-10-31
 
 ### Added

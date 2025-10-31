@@ -1,6 +1,6 @@
 [package]
 name = "gofile-dav"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Synthlace <synthlace@gmail.com>"]
 description = "a WebDAV implementation for the gofile.io service"
 repository = "https://github.com/synthlace/gofile-dav"
