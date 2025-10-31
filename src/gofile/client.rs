@@ -4,10 +4,13 @@ use super::{
     error::{Error, Result},
     model::{
         AccountInfo, AccountInfoResponse, BypassFiles, BypassFilesResponse, Contents,
-        ContentsResponse, CreateGuestAccount, CreateGuestAccountResponse,
+        ContentsResponse, CreateGuestAccount, CreateGuestAccountResponse, IdOrCode,
     },
 };
+
 use anyhow::anyhow;
+use futures_util::try_join;
+use log::warn;
 use reqwest::{Client as RqwClient, IntoUrl, Method, header::REFERER};
 use reqwest_middleware::{
     ClientBuilder as MiddlewareClientBuilder, ClientWithMiddleware, RequestBuilder,
@@ -170,10 +173,11 @@ impl Client {
             .map(|s| s.as_ref())
     }
 
-    async fn _get_contents(&self, content_id: impl AsRef<str>) -> Result<Contents> {
+    async fn get_contents_inner(&self, content_id: impl Into<IdOrCode>) -> Result<Contents> {
         let wt_token = self.get_wt_token().await?;
+        let content_id = content_id.into();
 
-        self.auth_request_builder(Method::GET, format!("/contents/{}", content_id.as_ref()))
+        self.auth_request_builder(Method::GET, format!("/contents/{}", content_id))
             .await?
             .query(&[
                 ("wt", wt_token),
@@ -187,33 +191,62 @@ impl Client {
             .into_result()
     }
 
-    pub async fn get_contents(&self, content_id: impl AsRef<str>) -> Result<Contents> {
-        let contents = self._get_contents(content_id).await;
+    pub async fn get_contents(&self, content_id: impl Into<IdOrCode>) -> Result<Contents> {
+        let content_id = content_id.into();
+
         if !self.use_bypass {
-            return contents;
-        }
+            return self.get_contents_inner(&content_id).await;
+        } else {
+            let (mut contents, bypass_files) = match content_id {
+                IdOrCode::Uuid4 { .. } => {
+                    let contents = self.get_contents_inner(&content_id).await?;
 
-        let mut contents = contents?;
+                    if let Contents::Folder(ref folder_entry) = contents {
+                        if !folder_entry.public {
+                            warn!(
+                                "Bypass cannot be used on private folder {} - returning regular contents",
+                                folder_entry.id
+                            );
+                            return Ok(contents);
+                        }
 
-        if let Contents::Folder(ref mut folder_entry) = contents {
-            if !folder_entry.public {
-                return Ok(contents);
-            }
+                        let bypass_files = self.get_bypass_files(&folder_entry.code).await?;
 
-            let bypass_files = self.get_bypass_files(&folder_entry.code).await?;
-            for bypass_file in bypass_files {
-                for content in folder_entry.children.values_mut() {
-                    if let Contents::File(file_entry) = content
-                        && file_entry.name == bypass_file.name
-                    {
-                        file_entry.bypassed = true;
-                        file_entry.link = bypass_file.proxy_link.clone()
+                        (contents, bypass_files)
+                    } else {
+                        return Ok(contents);
+                    }
+                }
+                IdOrCode::Code { ref code } => {
+                    // Code-form IDs are only used for folders. Since the bypass service only accepts
+                    // folder IDs in code form, we can fetch both regular contents and bypass files
+                    // concurrently for better performance.
+                    try_join!(
+                        self.get_contents_inner(&content_id),
+                        self.get_bypass_files(code)
+                    )?
+                }
+            };
+
+            if let Contents::Folder(ref mut folder_entry) = contents {
+                if !folder_entry.public {
+                    return Ok(contents);
+                }
+
+                for bypass_file in bypass_files {
+                    for content in folder_entry.children.values_mut() {
+                        if let Contents::File(file_entry) = content
+                            && file_entry.name == bypass_file.name
+                        {
+                            file_entry.bypassed = true;
+                            file_entry.link = bypass_file.proxy_link.clone()
+                        }
                     }
                 }
             }
-        }
 
-        Ok(contents)
+            Ok(contents)
+        }
     }
 
     pub async fn create_guest_account(&self) -> Result<CreateGuestAccount> {
