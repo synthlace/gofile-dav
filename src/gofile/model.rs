@@ -5,10 +5,19 @@ use serde::{Deserialize, Deserializer, Serialize, de};
 use url::Url;
 use uuid::Uuid;
 
-#[allow(unused)]
+#[derive(Debug, Clone)]
 pub enum IdOrCode {
     Uuid4 { uuid: Uuid },
     Code { code: String },
+}
+
+impl std::fmt::Display for IdOrCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            IdOrCode::Uuid4 { uuid } => write!(f, "{}", uuid),
+            IdOrCode::Code { code } => write!(f, "{}", code),
+        }
+    }
 }
 
 impl FromStr for IdOrCode {
@@ -19,6 +28,35 @@ impl FromStr for IdOrCode {
             Ok(uuid) => Ok(Self::Uuid4 { uuid }),
             Err(_) => Ok(Self::Code { code: s.to_owned() }),
         }
+    }
+}
+
+// TODO?: Consider refactoring all IDs to `IdOrCode`.
+// These `From` impls exist to allow passing strings or references into functions
+// expecting `Into<IdOrCode>` without refactoring all existing IDs. They make
+// the API flexible for both `String`, `&str`, and `&IdOrCode` inputs.
+
+impl From<&IdOrCode> for IdOrCode {
+    fn from(s: &IdOrCode) -> Self {
+        s.clone()
+    }
+}
+
+impl From<&str> for IdOrCode {
+    fn from(s: &str) -> Self {
+        Self::from_str(s).unwrap()
+    }
+}
+
+impl From<String> for IdOrCode {
+    fn from(s: String) -> Self {
+        Self::from_str(&s).unwrap()
+    }
+}
+
+impl From<&String> for IdOrCode {
+    fn from(s: &String) -> Self {
+        Self::from_str(s).unwrap()
     }
 }
 
