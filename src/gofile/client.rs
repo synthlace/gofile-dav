@@ -8,7 +8,8 @@ use super::{
     },
 };
 
-use anyhow::anyhow;
+use anyhow::{Context, anyhow};
+use async_recursion::async_recursion;
 use futures_util::try_join;
 use log::warn;
 use reqwest::{Client as RqwClient, IntoUrl, Method, header::REFERER};
@@ -191,7 +192,11 @@ impl Client {
             .into_result()
     }
 
-    pub async fn get_contents(&self, content_id: impl Into<IdOrCode>) -> Result<Contents> {
+    #[async_recursion]
+    pub async fn get_contents<T>(&self, content_id: T) -> Result<Contents>
+    where
+        T: Into<IdOrCode> + Send,
+    {
         let content_id = content_id.into();
 
         if !self.use_bypass {
@@ -201,20 +206,47 @@ impl Client {
                 IdOrCode::Uuid4 { .. } => {
                     let contents = self.get_contents_inner(&content_id).await?;
 
-                    if let Contents::Folder(ref folder_entry) = contents {
-                        if !folder_entry.public {
-                            warn!(
-                                "Bypass cannot be used on private folder {} - returning regular contents",
-                                folder_entry.id
-                            );
-                            return Ok(contents);
+                    match contents {
+                        Contents::Folder(ref folder_entry) => {
+                            if !folder_entry.public {
+                                warn!(
+                                    "Bypass cannot be used on private folder {} - returning regular contents",
+                                    folder_entry.id
+                                );
+                                return Ok(contents);
+                            }
+
+                            let bypass_files = self.get_bypass_files(&folder_entry.code).await?;
+
+                            (contents, bypass_files)
                         }
+                        Contents::File(file_entry) => {
+                            let parrent_contents =
+                                self.get_contents(file_entry.parent_folder).await?;
 
-                        let bypass_files = self.get_bypass_files(&folder_entry.code).await?;
-
-                        (contents, bypass_files)
-                    } else {
-                        return Ok(contents);
+                            match parrent_contents {
+                                Contents::File(file_entry) => {
+                                    return Err(anyhow!(
+                                        "Expected folder but got file {}",
+                                        file_entry.id
+                                    )
+                                    .into());
+                                }
+                                Contents::Folder(parent_folder) => {
+                                    return Ok(parent_folder
+                                        .children
+                                        .values()
+                                        .find(|el| el.id() == &file_entry.id)
+                                        .with_context(|| {
+                                            format!(
+                                                "Expected file {} to be found in parent folder {}",
+                                                file_entry.id, parent_folder.id
+                                            )
+                                        })?
+                                        .clone());
+                                }
+                            }
+                        }
                     }
                 }
                 IdOrCode::Code { ref code } => {
