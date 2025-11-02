@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3](https://github.com/synthlace/gofile-dav/compare/v0.1.2...v0.1.3) - 2025-11-01
+
+### Fixed
+
+- handle file entries via parent lookup during bypass
+
 ## [0.1.2](https://github.com/synthlace/gofile-dav/compare/v0.1.1...v0.1.2) - 2025-10-31
 
 ### Other
