@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4](https://github.com/synthlace/gofile-dav/compare/v0.1.3...v0.1.4) - 2025-11-04
+
+### Added
+
+- *(cli)* add short flag 'H' for host ([#9](https://github.com/synthlace/gofile-dav/pull/9))
+- password support ([#8](https://github.com/synthlace/gofile-dav/pull/8))
+
+### Fixed
+
+- *(cli)* allow using both api_token and root_id together, matching docs
+
 ## [0.1.3](https://github.com/synthlace/gofile-dav/compare/v0.1.2...v0.1.3) - 2025-11-01
 
 ### Fixed
