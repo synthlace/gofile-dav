@@ -33,6 +33,7 @@ enum Command {
         ArgGroup::new("auth")
         .args(&["root_id", "api_token"])
         .required(true)
+        .multiple(true)
     ))]
     /// Run webdav server
     Serve {
