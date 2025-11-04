@@ -28,6 +28,7 @@ impl From<Error> for FsError {
         match value {
             Error::Io { source } => source.into(),
             Error::NotFound => FsError::NotFound,
+            Error::PasswordRequired | Error::PasswordWrong => FsError::Forbidden,
             _ => FsError::GeneralFailure,
         }
     }

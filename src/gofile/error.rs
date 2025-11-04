@@ -18,6 +18,10 @@ pub enum Error {
     Api { status: String },
     #[error("failed to parse wt token from JS")]
     ParseTokenFailed,
+    #[error("password required")]
+    PasswordRequired,
+    #[error("password wrong")]
+    PasswordWrong,
     #[error("not found")]
     NotFound,
     #[error(transparent)]
