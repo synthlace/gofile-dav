@@ -176,8 +176,6 @@ impl Contents {
     }
 }
 
-pub type ContentsResponse = ApiResponse<Contents>;
-
 // #[derive(Debug, Clone, Serialize, Deserialize)]
 // pub struct AccountId {
 //     pub id: String,
@@ -223,6 +221,8 @@ pub struct FileEntry {
     pub server_selected: String,
     pub parent_folder: String,
     #[serde(default = "_default_false")]
+    pub password: bool,
+    #[serde(default = "_default_false")]
     pub is_owner: bool,
     #[serde(default = "_default_false")]
     pub is_frozen: bool,
@@ -242,26 +242,206 @@ fn _default_false() -> bool {
     false
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PasswordStatus {
+    // No "PasswordOk" variant required — password state is encoded by the
+    // response variants (Ok vs Restricted) in ContentsWithPassword.
+    // PasswordOk,
+    PasswordRequired,
+    PasswordWrong,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct FolderEntry {
-    #[serde(default = "_default_true")]
-    pub is_dir: bool,
+pub struct FolderEntryRestricted {
+    pub password_status: PasswordStatus,
     pub can_access: bool,
     pub id: Uuid,
     pub name: String,
     pub create_time: u64,
     pub mod_time: u64,
+
+    #[serde(default = "_default_true")]
+    pub public: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileEntryRestricted {
+    pub password_status: PasswordStatus,
+    pub can_access: bool,
+
+    #[serde(default = "_default_true")]
+    pub public: bool,
+}
+
+#[derive(Debug, Clone)]
+pub enum ContentsRestricted {
+    File(FileEntryRestricted),
+    Folder(FolderEntryRestricted),
+}
+
+impl ContentsRestricted {
+    pub fn into_err(self) -> Error {
+        let password_status = match self {
+            ContentsRestricted::File(file) => file.password_status,
+            ContentsRestricted::Folder(folder) => folder.password_status,
+        };
+
+        match password_status {
+            PasswordStatus::PasswordRequired => Error::PasswordRequired,
+            PasswordStatus::PasswordWrong => Error::PasswordWrong,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "type")]
+pub enum ContentsOk {
+    #[serde(rename = "file")]
+    File(FileEntry),
+
+    #[serde(rename = "folder")]
+    Folder(FolderEntryOk),
+}
+
+impl<'de> Deserialize<'de> for ContentsRestricted {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        match value.get("type").and_then(serde_json::Value::as_str) {
+            Some("folder") => {
+                let folder =
+                    FolderEntryRestricted::deserialize(&value).map_err(serde::de::Error::custom)?;
+                Ok(ContentsRestricted::Folder(folder))
+            }
+            _ => {
+                let file =
+                    FileEntryRestricted::deserialize(&value).map_err(serde::de::Error::custom)?;
+                Ok(ContentsRestricted::File(file))
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ContentsWithPassword {
+    Ok(Box<ContentsOk>),
+    Restricted(ContentsRestricted),
+}
+
+pub type ContentsWithPasswordResponse = ApiResponse<ContentsWithPassword>;
+
+impl<'de> Deserialize<'de> for ContentsWithPassword {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer).map_err(de::Error::custom)?;
+
+        let status = value.get("passwordStatus").and_then(|s| s.as_str());
+
+        match status {
+            Some("passwordRequired") | Some("passwordWrong") => {
+                let restricted: ContentsRestricted =
+                    serde_json::from_value(value).map_err(de::Error::custom)?;
+                Ok(ContentsWithPassword::Restricted(restricted))
+            }
+            _ => {
+                let ok: ContentsOk = serde_json::from_value(value).map_err(de::Error::custom)?;
+                Ok(ContentsWithPassword::Ok(ok.into()))
+            }
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderEntry {
+    // #[serde(default = "_default_true")]
+    // pub is_dir: bool,
+    // pub total_download_count: u64,
+    // pub children_count: i64,
+    pub can_access: bool,
+    pub id: Uuid,
+    pub name: String,
+    pub create_time: u64,
+    pub mod_time: u64,
+    #[serde(default = "_default_false")]
+    pub password: bool,
+
     pub total_size: u64,
     pub code: String,
     pub public: bool,
-    pub total_download_count: u64,
-    pub children_count: i64,
     pub parent_folder: Option<String>,
     #[serde(default = "_default_false")]
     pub is_owner: bool,
     #[serde(default)]
     pub children: HashMap<String, Contents>,
+}
+
+/// Same as above, but uses the other child type.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderEntryOk {
+    // #[serde(default = "_default_true")]
+    // pub is_dir: bool,
+    // pub total_download_count: u64,
+    // pub children_count: i64,
+    pub can_access: bool,
+    pub id: Uuid,
+    pub name: String,
+    pub create_time: u64,
+    pub mod_time: u64,
+    #[serde(default = "_default_false")]
+    pub password: bool,
+
+    pub total_size: u64,
+    pub code: String,
+    pub public: bool,
+    pub parent_folder: Option<String>,
+    #[serde(default = "_default_false")]
+    pub is_owner: bool,
+    #[serde(default)]
+    pub children: HashMap<String, ContentsWithPassword>,
+}
+
+impl FolderEntryOk {
+    // Not suitable for Into<> semantics because it adds empty children
+    pub fn into_folder_entry_empty(self) -> FolderEntry {
+        let Self {
+            can_access,
+            id,
+            name,
+            create_time,
+            mod_time,
+            total_size,
+            code,
+            public,
+            parent_folder,
+            is_owner,
+            password,
+            ..
+        } = self;
+
+        FolderEntry {
+            can_access,
+            id,
+            name,
+            create_time,
+            mod_time,
+            total_size,
+            code,
+            public,
+            parent_folder,
+            is_owner,
+            password,
+            ..FolderEntry::default()
+        }
+    }
 }
 
 // #[derive(Debug, Serialize, Deserialize)]
@@ -289,6 +469,8 @@ pub type BypassFilesResponse = ApiResponse<BypassFiles>;
 #[cfg(test)]
 mod test {
     use super::*;
+    use rstest::*;
+
     use serde_json::json;
 
     #[test]
@@ -311,34 +493,41 @@ mod test {
             }
         });
 
-        let parsed: ContentsResponse = serde_json::from_value(value).unwrap();
-        match parsed {
-            ApiResponse::Ok {
-                data: Contents::Folder(folder),
-            } => {
-                assert!(folder.can_access);
-                assert_eq!(
-                    folder.id,
-                    Uuid::from_str("6c9e22a7-7d6c-4986-8e93-b118558be0bb").unwrap()
-                );
-                assert_eq!(folder.name, "root");
-                assert_eq!(folder.create_time, 1719990416);
-                assert_eq!(folder.mod_time, 1719990416);
-                assert_eq!(folder.code, "Veil7n");
-                assert_eq!(folder.public, false);
-                assert_eq!(folder.total_download_count, 0);
-                assert_eq!(folder.total_size, 0);
-                assert_eq!(folder.children_count, 0);
-                assert!(folder.children.is_empty());
+        let parsed = serde_json::from_value::<ContentsWithPasswordResponse>(value)
+            .unwrap()
+            .into_result()
+            .unwrap();
+
+        let folder_ok = if let ContentsWithPassword::Ok(contents) = parsed {
+            if let ContentsOk::Folder(folder) = *contents {
+                folder
+            } else {
+                panic!("expected ContentsWithPassword::ContentsOk::Folder");
             }
-            other => panic!("expected ApiResponse::Ok::Folder, got {:?}", other),
-        }
+        } else {
+            panic!("expected ContentsWithPassword::ContentsOk::Folder");
+        };
+
+        assert!(folder_ok.can_access);
+        assert_eq!(
+            folder_ok.id,
+            Uuid::from_str("6c9e22a7-7d6c-4986-8e93-b118558be0bb").unwrap()
+        );
+        assert_eq!(folder_ok.name, "root");
+        assert_eq!(folder_ok.create_time, 1719990416);
+        assert_eq!(folder_ok.mod_time, 1719990416);
+        assert_eq!(folder_ok.code, "Veil7n");
+        assert_eq!(folder_ok.public, false);
+        assert_eq!(folder_ok.total_size, 0);
+        assert!(folder_ok.children.is_empty());
+        // assert_eq!(folder.children_count, 0);
+        // assert_eq!(folder.total_download_count, 0);
     }
 
     #[test]
     fn test_other_api_response() {
         let value = json!({"status":"error-notPremium","data":{}});
-        let parsed: ContentsResponse = serde_json::from_value(value).unwrap();
+        let parsed = serde_json::from_value::<ContentsWithPasswordResponse>(value).unwrap();
 
         assert!(
             matches!(parsed, ApiResponse::NotPremium),
@@ -349,8 +538,76 @@ mod test {
     #[test]
     fn test_unexpected_api_response() {
         for input in [r#"{"verde": true}"#, r#""#] {
-            let result = serde_json::from_str::<ContentsResponse>(input);
+            let result = serde_json::from_str::<ContentsWithPasswordResponse>(input);
             assert!(result.is_err());
         }
+    }
+
+    #[rstest]
+    #[case("passwordRequired", PasswordStatus::PasswordRequired)]
+    #[case("passwordWrong", PasswordStatus::PasswordWrong)]
+    fn test_folder_with_password_required(#[case] input: &str, #[case] expected: PasswordStatus) {
+        let value = json!({
+            "status": "ok",
+            "data": {
+                "canAccess": false,
+                "password": true,
+                "passwordStatus": input,
+                "id": "a02b79ff-ae05-4c73-9861-81be0224e65b",
+                "type": "folder",
+                "name": "TestFolder",
+                "createTime": 1762184779,
+                "modTime": 1762186199
+            },
+            "metadata": {}
+        });
+        let parsed = serde_json::from_value::<ContentsWithPasswordResponse>(value)
+            .unwrap()
+            .into_result()
+            .unwrap();
+        let restricted_folder =
+            if let ContentsWithPassword::Restricted(ContentsRestricted::Folder(folder)) = parsed {
+                folder
+            } else {
+                panic!("expected ContentsWithPassword::ContentsRestricted::Folder");
+            };
+
+        assert_eq!(restricted_folder.password_status, expected);
+        assert_eq!(
+            restricted_folder.id,
+            Uuid::from_str("a02b79ff-ae05-4c73-9861-81be0224e65b").unwrap()
+        );
+        assert_eq!(restricted_folder.can_access, false);
+        assert_eq!(restricted_folder.name, "TestFolder");
+        assert_eq!(restricted_folder.create_time, 1762184779);
+        assert_eq!(restricted_folder.mod_time, 1762186199);
+    }
+
+    #[rstest]
+    #[case("passwordRequired", PasswordStatus::PasswordRequired)]
+    #[case("passwordWrong", PasswordStatus::PasswordWrong)]
+    fn test_file_with_password_required(#[case] input: &str, #[case] expected: PasswordStatus) {
+        let value = json!({
+            "status": "ok",
+            "data": {
+                "canAccess": false,
+                "password": true,
+                "passwordStatus": input
+            },
+            "metadata": {}
+        });
+        let parsed = serde_json::from_value::<ContentsWithPasswordResponse>(value)
+            .unwrap()
+            .into_result()
+            .unwrap();
+        let restricted_file =
+            if let ContentsWithPassword::Restricted(ContentsRestricted::File(file)) = parsed {
+                file
+            } else {
+                panic!("expected ContentsWithPassword::ContentsRestricted::File");
+            };
+
+        assert_eq!(restricted_file.password_status, expected);
+        assert_eq!(restricted_file.can_access, false);
     }
 }

@@ -1,17 +1,18 @@
-use std::{result::Result as StdResult, time::Duration};
+use std::{collections::HashMap, result::Result as StdResult, time::Duration};
 
 use super::{
     error::{Error, Result},
     model::{
-        AccountInfo, AccountInfoResponse, BypassFiles, BypassFilesResponse, Contents,
-        ContentsResponse, CreateGuestAccount, CreateGuestAccountResponse, IdOrCode,
+        AccountInfo, AccountInfoResponse, BypassFiles, BypassFilesResponse, Contents, ContentsOk,
+        ContentsRestricted, ContentsWithPassword, ContentsWithPasswordResponse, CreateGuestAccount,
+        CreateGuestAccountResponse, FolderEntry, FolderEntryOk, IdOrCode,
     },
 };
 
 use anyhow::{Context, anyhow};
 use async_recursion::async_recursion;
 use futures_util::try_join;
-use log::warn;
+use log::{error, warn};
 use reqwest::{Client as RqwClient, IntoUrl, Method, header::REFERER};
 use reqwest_middleware::{
     ClientBuilder as MiddlewareClientBuilder, ClientWithMiddleware, RequestBuilder,
@@ -35,6 +36,7 @@ static WT_TOKEN: OnceCell<String> = OnceCell::const_new();
 pub struct ClientBuilder {
     client: Option<RqwClient>,
     api_token: Option<String>,
+    password: Option<String>,
     bypass: bool,
 }
 
@@ -49,6 +51,7 @@ impl ClientBuilder {
         Self {
             client: None,
             api_token: None,
+            password: None,
             bypass: false,
         }
     }
@@ -69,6 +72,11 @@ impl ClientBuilder {
         self
     }
 
+    pub fn with_password(mut self, password: String) -> Self {
+        self.password = Some(password);
+        self
+    }
+
     pub fn build(self) -> Client {
         let retry_policy = ExponentialBackoff::builder()
             .retry_bounds(Duration::from_millis(500), Duration::from_secs(20))
@@ -82,9 +90,12 @@ impl ClientBuilder {
 
         let api_token = OnceCell::new_with(self.api_token);
 
+        let password = self.password;
+
         Client {
             client,
             api_token,
+            password,
             use_bypass: self.bypass,
         }
     }
@@ -94,6 +105,7 @@ impl ClientBuilder {
 pub struct Client {
     client: ClientWithMiddleware,
     api_token: OnceCell<String>,
+    password: Option<String>,
     use_bypass: bool,
 }
 
@@ -178,18 +190,133 @@ impl Client {
         let wt_token = self.get_wt_token().await?;
         let content_id = content_id.into();
 
-        self.auth_request_builder(Method::GET, format!("/contents/{}", content_id))
+        let mut params: Vec<(&str, &str)> = Vec::with_capacity(4);
+        params.push(("wt", wt_token));
+        params.push(("page", "1"));
+        params.push(("pageSize", DEFAULT_PAGE_SIZE));
+        if let Some(pw) = self.password.as_deref() {
+            params.push(("password", pw));
+        }
+
+        let result = self
+            .auth_request_builder(Method::GET, format!("/contents/{}", content_id))
             .await?
-            .query(&[
-                ("wt", wt_token),
-                ("page", "1"),
-                ("pageSize", DEFAULT_PAGE_SIZE),
-            ])
+            .query(&params)
             .send()
             .await?
-            .json::<ContentsResponse>()
+            .json::<ContentsWithPasswordResponse>()
             .await?
-            .into_result()
+            .into_result()?;
+
+        let contents = match result {
+            // Nothing to do here - the password has already been applied
+            ContentsWithPassword::Restricted(restricted_contents) => {
+                return Err(restricted_contents.into_err());
+            }
+            ContentsWithPassword::Ok(contents) => contents,
+        };
+
+        let folder_entry_ok = match *contents {
+            ContentsOk::File(file_entry) => return Ok(Contents::File(file_entry)),
+            ContentsOk::Folder(folder_entry) => folder_entry,
+        };
+
+        let FolderEntryOk {
+            can_access,
+            id,
+            name,
+            create_time,
+            mod_time,
+            total_size,
+            code,
+            public,
+            parent_folder,
+            is_owner,
+            children,
+            password,
+        } = folder_entry_ok;
+
+        let mut folder_entry = FolderEntry {
+            can_access,
+            id,
+            name,
+            create_time,
+            mod_time,
+            total_size,
+            code,
+            public,
+            parent_folder,
+            is_owner,
+            password,
+            ..FolderEntry::default()
+        };
+
+        let mut folders_to_process = vec![];
+
+        let mut new_children = HashMap::new();
+
+        for (uuid, child) in children {
+            match child {
+                ContentsWithPassword::Ok(contents_ok) => match *contents_ok {
+                    ContentsOk::File(file_entry_ok) => {
+                        new_children.insert(uuid, Contents::File(file_entry_ok));
+                    }
+                    ContentsOk::Folder(folder_entry_ok) => {
+                        new_children.insert(
+                            uuid,
+                            Contents::Folder(folder_entry_ok.into_folder_entry_empty()),
+                        );
+                    }
+                },
+                ContentsWithPassword::Restricted(contents_restricted) => {
+                    match contents_restricted {
+                        ContentsRestricted::File(_) => {
+                            // Technically impossible. Occurs only as a top-level entry.
+                            warn!("hit restricted file {}", uuid);
+                            continue;
+                        }
+                        ContentsRestricted::Folder(folder_entry_restricted) => {
+                            folders_to_process.push(folder_entry_restricted.id)
+                        }
+                    }
+                }
+            }
+        }
+
+        for folder_id in folders_to_process {
+            let result = self
+                .auth_request_builder(Method::GET, format!("/contents/{}", folder_id))
+                .await?
+                .query(&params)
+                .send()
+                .await?
+                .json::<ContentsWithPasswordResponse>()
+                .await?
+                .into_result()?;
+
+            match result {
+                ContentsWithPassword::Ok(contents_ok) => match *contents_ok {
+                    ContentsOk::File(file_entry_ok) => {
+                        return Err(
+                            anyhow!("expected folder but got file {}", file_entry_ok.id).into()
+                        );
+                    }
+                    ContentsOk::Folder(folder_entry_ok) => {
+                        let folder_entry = folder_entry_ok.into_folder_entry_empty();
+                        new_children.insert(folder_id.to_string(), Contents::Folder(folder_entry));
+                    }
+                },
+                ContentsWithPassword::Restricted(contents_restricted) => {
+                    error!("expected ok contents but got restricted on {}", folder_id);
+
+                    return Err(contents_restricted.into_err());
+                }
+            }
+        }
+
+        folder_entry.children = new_children;
+
+        Ok(Contents::Folder(folder_entry))
     }
 
     #[async_recursion]
@@ -203,8 +330,18 @@ impl Client {
             return self.get_contents_inner(&content_id).await;
         } else {
             let (mut contents, bypass_files) = match content_id {
-                IdOrCode::Uuid4 { .. } => {
-                    let contents = self.get_contents_inner(&content_id).await?;
+                IdOrCode::Code { ref code } if self.password.is_none() => {
+                    // Code-form IDs are only used for folders. Since the bypass service only accepts
+                    // folder IDs in code form, we can fetch both regular contents and bypass files
+                    // concurrently for better performance.
+                    try_join!(
+                        self.get_contents_inner(&content_id),
+                        self.get_bypass_files(code)
+                    )?
+                }
+
+                id_or_code => {
+                    let contents = self.get_contents_inner(&id_or_code).await?;
 
                     match contents {
                         Contents::Folder(ref folder_entry) => {
@@ -216,13 +353,29 @@ impl Client {
                                 return Ok(contents);
                             }
 
+                            if folder_entry.password {
+                                warn!(
+                                    "Bypass cannot be used on folders with password {} - returning regular contents",
+                                    folder_entry.id
+                                );
+                                return Ok(contents);
+                            }
+
                             let bypass_files = self.get_bypass_files(&folder_entry.code).await?;
 
                             (contents, bypass_files)
                         }
-                        Contents::File(file_entry) => {
+                        Contents::File(ref file_entry) => {
+                            if file_entry.password {
+                                warn!(
+                                    "Bypass cannot be used on file with password {} - returning regular contents",
+                                    file_entry.id
+                                );
+                                return Ok(contents);
+                            }
+
                             let parrent_contents =
-                                self.get_contents(file_entry.parent_folder).await?;
+                                self.get_contents(file_entry.parent_folder.as_str()).await?;
 
                             match parrent_contents {
                                 Contents::File(file_entry) => {
@@ -248,15 +401,6 @@ impl Client {
                             }
                         }
                     }
-                }
-                IdOrCode::Code { ref code } => {
-                    // Code-form IDs are only used for folders. Since the bypass service only accepts
-                    // folder IDs in code form, we can fetch both regular contents and bypass files
-                    // concurrently for better performance.
-                    try_join!(
-                        self.get_contents_inner(&content_id),
-                        self.get_bypass_files(code)
-                    )?
                 }
             };
 

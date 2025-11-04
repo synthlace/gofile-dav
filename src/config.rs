@@ -5,4 +5,5 @@ pub struct Config {
     pub port: u16,
     pub host: String,
     pub bypass: bool,
+    pub password: Option<String>,
 }

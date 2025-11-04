@@ -1,8 +1,7 @@
 use clap::{ArgGroup, Parser, Subcommand};
 use env_logger::Env;
 
-use std::net::TcpListener;
-use std::sync::Arc;
+use std::{net::TcpListener, sync::Arc};
 
 mod config;
 mod gofile;
@@ -45,6 +44,10 @@ enum Command {
         #[arg(env)]
         root_id: Option<String>,
 
+        /// Root password
+        #[arg(long, short = 'P', env)]
+        password: Option<String>,
+
         /// Port for the application
         #[arg(long, short, env, default_value_t = 4914)]
         port: u16,
@@ -73,12 +76,14 @@ impl TryFrom<Command> for Config {
                 port,
                 host,
                 bypass,
+                password,
             } => Ok(Config {
                 root_id,
                 api_token,
                 port,
                 host,
                 bypass,
+                password: password.map(sha256::digest),
             }),
             Command::Upgrade => Err("Cannot create Config from Upgrade command"),
         }
@@ -111,6 +116,11 @@ async fn run(config: Config) -> anyhow::Result<()> {
     if let Some(api_token) = config.api_token {
         client = client.with_token(api_token)
     }
+
+    if let Some(password) = config.password.clone() {
+        client = client.with_password(password)
+    }
+
     let client = client.build();
 
     let account = client.get_current_account_info().await?;
@@ -129,7 +139,13 @@ async fn run(config: Config) -> anyhow::Result<()> {
     let root_id = match client.get_contents(&root_id).await {
         Ok(contents) => match contents {
             Contents::File(file) => bail!("Expected folder but got file {}", file.id),
-            Contents::Folder(folder) => folder.code,
+            Contents::Folder(folder) => {
+                if config.password.is_some() && folder.is_owner {
+                    warn!("no password needed for owned folder");
+                }
+
+                folder.code
+            }
         },
         Err(Error::NotFound) => bail!("Contents not found {}", root_id),
         Err(e) => return Err(e.into()),
