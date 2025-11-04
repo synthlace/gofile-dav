@@ -53,7 +53,7 @@ enum Command {
         port: u16,
 
         /// Host for the application
-        #[arg(long, env, default_value = "127.0.0.1")]
+        #[arg(long, short = 'H', env, default_value = "127.0.0.1")]
         host: String,
 
         /// Use public service gofile-bypass.cybar.xyz for downloads
