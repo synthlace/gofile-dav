@@ -26,6 +26,10 @@ A **quota bypass** is available to help with download limits for free/guest user
 
     gofile-dav serve 6c9e22a7-7d6c-4986-8e93-b118558be0bb
 
+### Serve a folder protected with a password
+
+    gofile-dav serve Veil7n --password CrYpt0C4rr0t
+
 ### Serve your root folder
 
     gofile-dav serve --api-token Maie2RlOFDDDRao0Y5ll54EAtv2imUlZ
