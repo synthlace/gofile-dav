@@ -89,7 +89,7 @@ Options:
   -t, --api-token <API_TOKEN>  Gofile API token [env: API_TOKEN=]
   -P, --password <PASSWORD>    Root password [env: PASSWORD=]
   -p, --port <PORT>            Port for the application [env: PORT=] [default: 4914]
-      --host <HOST>            Host for the application [env: HOST=] [default: 127.0.0.1]
+  -H, --host <HOST>            Host for the application [env: HOST=] [default: 127.0.0.1]
   -b, --bypass                 Use public service gofile-bypass.cybar.xyz for downloads [env: BYPASS=]
   -h, --help                   Print help
 ```
