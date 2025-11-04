@@ -76,7 +76,7 @@ Options:
 ```text
 Run webdav server
 
-Usage: gofile-dav.exe serve [OPTIONS] <ROOT_ID|--api-token <API_TOKEN>>
+Usage: gofile-dav serve [OPTIONS] <ROOT_ID|--api-token <API_TOKEN>>
 
 Arguments:
   [ROOT_ID]  Root folder ID [env: ROOT_ID=]
