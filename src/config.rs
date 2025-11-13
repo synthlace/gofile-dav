@@ -6,4 +6,5 @@ pub struct Config {
     pub host: String,
     pub bypass: bool,
     pub password: Option<String>,
+    pub write_enabled: bool,
 }
