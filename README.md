@@ -10,9 +10,9 @@
 
 It supports access either directly through a browser (WebDAV HTTP mode) or via a native WebDAV client.
 
-**Currently, the implementation is read-only.**
+It supports [write mode](#serve-with-write-mode-enabled).
 
-**It does not require a premium account** and works seamlessly with free or guest plans, making it accessible for anyone to serve and mount their gofile.io directories (unlike other tools, such as Rclone, which enforce purchasing a premium).
+**It does not require a premium account** and works seamlessly with free or guest plans, making it accessible for anyone to serve and mount their gofile.io directories (unlike other tools, such as [Rclone, which enforce purchasing a premium](https://rclone.org/gofile/#:~:text=Note%20that%20if%20you%20wish%20to%20connect%20rclone%20to%20Gofile%20you%20will%20need%20a%20premium%20account)).
 
 A **quota bypass** is available to help with download limits for free/guest users — [Experimental](#experimental)
 
@@ -37,6 +37,29 @@ A **quota bypass** is available to help with download limits for free/guest user
 ### Serve specific folder with your token
 
     gofile-dav serve Veil7n --api-token Maie2RlOFDDDRao0Y5ll54EAtv2imUlZ
+
+### Serve with write mode enabled
+
+**Warning:** The implementation supports most expected write-related features, with the following limitations:
+
+-   MOVE operations for folders (e.g., cut + paste) are not supported
+-   Seeking during writes is not possible
+-   Append mode is unsupported
+
+**Implemented write features**
+
+-   Create folders
+-   Upload files
+-   Delete files and folders
+-   Copy files and folders
+-   Rename files and folders
+-   Move files (does not work on folders)
+
+```bash
+gofile-dav serve -m read-write --api-token Maie2RlOFDDDRao0Y5ll54EAtv2imUlZ
+```
+
+**Note**: for improved reliability and to overcome the mentioned limitations, use a filesystem cache layer such as `rclone` with `--vfs-cache-mode writes` or `--vfs-cache-mode full`.
 
 ### Upgrade
 
@@ -88,6 +111,7 @@ Arguments:
 Options:
   -t, --api-token <API_TOKEN>  Gofile API token [env: API_TOKEN=]
   -P, --password <PASSWORD>    Root password [env: PASSWORD=]
+  -m, --mode <MODE>            Mode [env: MODE=] [default: read-only] [possible values: read-only, read-write]
   -p, --port <PORT>            Port for the application [env: PORT=] [default: 4914]
   -H, --host <HOST>            Host for the application [env: HOST=] [default: 127.0.0.1]
   -b, --bypass                 Use public service gofile-bypass.cybar.xyz for downloads [env: BYPASS=]

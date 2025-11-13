@@ -24,6 +24,8 @@ pub enum Error {
     PasswordWrong,
     #[error("not found")]
     NotFound,
+    #[error("forbidden")]
+    Forbidden,
     #[error(transparent)]
     Unexpected(#[from] anyhow::Error),
 }

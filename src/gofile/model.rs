@@ -36,6 +36,18 @@ impl FromStr for IdOrCode {
 // expecting `Into<IdOrCode>` without refactoring all existing IDs. They make
 // the API flexible for both `String`, `&str`, and `&IdOrCode` inputs.
 
+impl From<Uuid> for IdOrCode {
+    fn from(uuid: Uuid) -> Self {
+        IdOrCode::Uuid4 { uuid }
+    }
+}
+
+impl From<&Uuid> for IdOrCode {
+    fn from(uuid: &Uuid) -> Self {
+        IdOrCode::Uuid4 { uuid: *uuid }
+    }
+}
+
 impl From<&IdOrCode> for IdOrCode {
     fn from(s: &IdOrCode) -> Self {
         s.clone()
@@ -62,7 +74,7 @@ impl From<&String> for IdOrCode {
 
 /// Top-level response
 #[derive(Debug, Serialize)]
-pub enum ApiResponse<T> {
+pub enum ApiResponse<T = serde_json::Value> {
     Ok { data: T },
     NotFound,
     RateLimit,
@@ -140,6 +152,10 @@ pub enum Contents {
 }
 
 impl Contents {
+    pub fn is_dir(&self) -> bool {
+        matches!(self, Self::Folder(_))
+    }
+
     pub fn name(&self) -> &str {
         match self {
             Self::Folder(folder) => &folder.name,
@@ -233,6 +249,25 @@ pub struct FileEntry {
     #[serde(default = "_default_false")]
     pub bypassed: bool,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileUploaded {
+    pub create_time: u64,
+    pub download_page: String,
+    pub id: Uuid,
+    pub md5: String,
+    pub mimetype: String,
+    pub mod_time: u64,
+    pub name: String,
+    pub parent_folder: String,
+    pub parent_folder_code: String,
+    pub servers: Vec<String>,
+    pub size: u64,
+    pub r#type: String,
+}
+
+pub type FileUploadedResponse = ApiResponse<FileUploaded>;
 
 fn _default_true() -> bool {
     true
@@ -443,6 +478,94 @@ impl FolderEntryOk {
         }
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateFolderPayload<'a> {
+    pub folder_name: &'a str,
+    pub parent_folder_id: &'a str,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderCreated {
+    pub code: String,
+    pub create_time: u64,
+    pub id: Uuid,
+    pub mod_time: u64,
+    pub name: String,
+    pub owner: Uuid,
+    pub parent_folder: Uuid,
+    pub r#type: String,
+}
+
+pub type FolderCreatedResponse = ApiResponse<FolderCreated>;
+
+#[derive(Debug, Clone)]
+pub enum Attribute<'a> {
+    Name(&'a str),
+}
+
+impl<'a> Serialize for Attribute<'a> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(2))?;
+        match self {
+            Self::Name(v) => {
+                map.serialize_entry("attribute", "name")?;
+                map.serialize_entry("attributeValue", v)?;
+            }
+        }
+        map.end()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileUpdated {
+    pub create_time: u64,
+    pub id: Uuid,
+    pub md5: String,
+    pub mimetype: String,
+    pub mod_time: u64,
+    pub name: String,
+    pub parent_folder: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderUpdated {
+    pub create_time: u64,
+    pub id: Uuid,
+    pub mod_time: u64,
+    pub name: String,
+    pub parent_folder: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum ContentsUdpated {
+    #[serde(rename = "file")]
+    File(FileUpdated),
+
+    #[serde(rename = "folder")]
+    Folder(FolderUpdated),
+}
+
+pub type ContentsUdpatedResponse = ApiResponse<ContentsUdpated>;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteContentsPayload<'a> {
+    /// Comma-separated list of content IDs to delete.
+    pub contents_id: &'a str,
+}
+
+pub type DeletedContents = HashMap<String, ApiResponse>;
+pub type DeleteContentsResponse = ApiResponse<DeletedContents>;
 
 // #[derive(Debug, Serialize, Deserialize)]
 // #[serde(rename_all = "camelCase")]

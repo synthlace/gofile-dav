@@ -1,4 +1,4 @@
-use clap::{ArgGroup, Parser, Subcommand};
+use clap::{ArgGroup, Parser, Subcommand, ValueEnum};
 use env_logger::Env;
 
 use std::{net::TcpListener, sync::Arc};
@@ -14,6 +14,8 @@ use dav_server::{
     DavConfig, DavHandler, DavMethodSet,
     actix::{DavRequest, DavResponse},
     fakels::FakeLs,
+    ls::DavLockSystem,
+    memls::MemLs,
 };
 use gofile::{Client, DavFs, DirCache, error::Error, model::Contents};
 use log::{info, warn};
@@ -48,6 +50,10 @@ enum Command {
         #[arg(long, short = 'P', env)]
         password: Option<String>,
 
+        /// Mode
+        #[arg(long, short, env, value_enum, default_value_t = Mode::ReadOnly)]
+        mode: Mode,
+
         /// Port for the application
         #[arg(long, short, env, default_value_t = 4914)]
         port: u16,
@@ -65,6 +71,12 @@ enum Command {
     Upgrade,
 }
 
+#[derive(Clone, Debug, ValueEnum)]
+enum Mode {
+    ReadOnly,
+    ReadWrite,
+}
+
 impl TryFrom<Command> for Config {
     type Error = &'static str;
 
@@ -77,6 +89,7 @@ impl TryFrom<Command> for Config {
                 host,
                 bypass,
                 password,
+                mode,
             } => Ok(Config {
                 root_id,
                 api_token,
@@ -84,6 +97,7 @@ impl TryFrom<Command> for Config {
                 host,
                 bypass,
                 password: password.map(sha256::digest),
+                write_enabled: matches!(mode, Mode::ReadWrite),
             }),
             Command::Upgrade => Err("Cannot create Config from Upgrade command"),
         }
@@ -140,6 +154,10 @@ async fn run(config: Config) -> anyhow::Result<()> {
         Ok(contents) => match contents {
             Contents::File(file) => bail!("Expected folder but got file {}", file.id),
             Contents::Folder(folder) => {
+                if config.write_enabled && !folder.is_owner {
+                    bail!("Write can be used only on an owned folder")
+                }
+
                 if config.password.is_some() && folder.is_owner {
                     warn!("no password needed for owned folder");
                 }
@@ -152,10 +170,23 @@ async fn run(config: Config) -> anyhow::Result<()> {
     };
 
     let dircache = Arc::new(RwLock::new(DirCache::new(root_id)));
+    let filesystem = DavFs::new_boxed(client, dircache, config.write_enabled);
+    let (methods, locksystem) = if config.write_enabled {
+        (
+            DavMethodSet::WEBDAV_RW,
+            MemLs::new() as Box<dyn DavLockSystem>,
+        )
+    } else {
+        (
+            DavMethodSet::WEBDAV_RO,
+            FakeLs::new() as Box<dyn DavLockSystem>,
+        )
+    };
+
     let dav_server = DavConfig::new()
-        .methods(DavMethodSet::WEBDAV_RO)
-        .filesystem(DavFs::new_boxed(client, dircache))
-        .locksystem(FakeLs::new())
+        .methods(methods)
+        .filesystem(filesystem)
+        .locksystem(locksystem)
         .build_handler();
 
     let bind_addr = format!("{}:{}", config.host, config.port);
