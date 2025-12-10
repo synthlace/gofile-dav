@@ -30,7 +30,7 @@ const API_BASE_URL: &str = "https://api.gofile.io";
 const API_BASE_UPLOAD_URL: &str = "https://upload.gofile.io";
 const DEFAULT_MAX_RETRIES: u32 = 10;
 const REFERER_HEADER: &str = "https://gofile.io/";
-const GOFILE_GLOBALJS_WT_URL: &str = "https://gofile.io/dist/js/global.js";
+const GOFILE_JS_WT_URL: &str = "https://gofile.io/dist/js/config.js";
 // JS Number.MAX_SAFE_INTEGER
 const DEFAULT_PAGE_SIZE: &str = "9007199254740991";
 
@@ -180,7 +180,7 @@ impl Client {
         WT_TOKEN
             .get_or_try_init(|| async {
                 self.client
-                    .get(GOFILE_GLOBALJS_WT_URL)
+                    .get(GOFILE_JS_WT_URL)
                     .header(REFERER, REFERER_HEADER)
                     .send()
                     .await?
@@ -200,8 +200,7 @@ impl Client {
         let wt_token = self.get_wt_token().await?;
         let content_id = content_id.into();
 
-        let mut params: Vec<(&str, &str)> = Vec::with_capacity(4);
-        params.push(("wt", wt_token));
+        let mut params: Vec<(&str, &str)> = Vec::with_capacity(3);
         params.push(("page", "1"));
         params.push(("pageSize", DEFAULT_PAGE_SIZE));
         if let Some(pw) = self.password.as_deref() {
@@ -211,6 +210,7 @@ impl Client {
         let result = self
             .auth_request_builder(Method::GET, format!("/contents/{}", content_id))
             .await?
+            .header("X-Website-Token", wt_token)
             .query(&params)
             .send()
             .await?
