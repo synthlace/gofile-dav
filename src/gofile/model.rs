@@ -163,10 +163,10 @@ impl Contents {
         }
     }
 
-    pub fn id(&self) -> &Uuid {
+    pub fn id(&self) -> Uuid {
         match self {
-            Self::File(file_entry) => &file_entry.id,
-            Self::Folder(folder_entry) => &folder_entry.id,
+            Self::File(file_entry) => file_entry.id,
+            Self::Folder(folder_entry) => folder_entry.id,
         }
     }
 
@@ -415,7 +415,7 @@ pub struct FolderEntry {
     #[serde(default = "_default_false")]
     pub is_owner: bool,
     #[serde(default)]
-    pub children: HashMap<String, Contents>,
+    pub children: HashMap<Uuid, Contents>,
 }
 
 /// Same as above, but uses the other child type.
@@ -441,7 +441,7 @@ pub struct FolderEntryOk {
     #[serde(default = "_default_false")]
     pub is_owner: bool,
     #[serde(default)]
-    pub children: HashMap<String, ContentsWithPassword>,
+    pub children: HashMap<Uuid, ContentsWithPassword>,
 }
 
 impl FolderEntryOk {
@@ -582,7 +582,7 @@ pub type DeleteContentsResponse = ApiResponse<DeletedContents>;
 pub struct BypassFile {
     pub name: String,
     pub size: u64,
-    pub link: Url,
+    pub id: Uuid,
     pub proxy_link: Url,
 }
 

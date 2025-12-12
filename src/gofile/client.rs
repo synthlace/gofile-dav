@@ -286,7 +286,7 @@ impl Client {
                     }
                     ContentsOk::Folder(folder_entry_ok) => {
                         let folder_entry = folder_entry_ok.into_folder_entry_empty();
-                        new_children.insert(folder_id.to_string(), Contents::Folder(folder_entry));
+                        new_children.insert(folder_id, Contents::Folder(folder_entry));
                     }
                 },
                 ContentsWithPassword::Restricted(contents_restricted) => {
@@ -333,7 +333,6 @@ impl Client {
                             return Ok(contents);
                         }
 
-                        // Bypass doesn't work for folders that don't contain any files
                         if !folder_entry
                             .children
                             .values()
@@ -370,7 +369,7 @@ impl Client {
                                 return Ok(parent_folder
                                     .children
                                     .values()
-                                    .find(|el| el.id() == &file_entry.id)
+                                    .find(|el| el.id() == file_entry.id)
                                     .with_context(|| {
                                         format!(
                                             "Expected file {} to be found in parent folder {}",
@@ -392,7 +391,7 @@ impl Client {
                 for bypass_file in bypass_files {
                     for (id, content) in folder_entry.children.iter_mut() {
                         if let Contents::File(file_entry) = content
-                            && (bypass_file.link.as_str().contains(id))
+                            && (bypass_file.id == *id)
                         {
                             file_entry.bypassed = true;
                             file_entry.link = bypass_file.proxy_link.clone()
@@ -533,10 +532,6 @@ impl Client {
                 .query(&[("folderId", id.as_ref())])
                 .send()
                 .await?;
-
-            if resp.status() == 502 {
-                return Err(Error::NotFound);
-            }
 
             let data = resp.json::<BypassFilesResponse>().await?.into_result()?;
 
