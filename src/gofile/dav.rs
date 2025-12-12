@@ -341,7 +341,7 @@ impl FsDavFile for DavFileWrite {
                 .children
                 .values()
                 .filter(|v| !v.is_dir() && v.name() == filename)
-                .map(|v| *v.id())
+                .map(|v| v.id())
                 .collect();
 
             let uploaded_id = if let Some(handle) = self.handle.take() {
@@ -496,7 +496,7 @@ impl DavFs {
                         );
                     }
 
-                    filtered_childs.insert(child.id().to_string(), child.clone());
+                    filtered_childs.insert(child.id(), child.clone());
                 }
 
                 folder.children = filtered_childs;
@@ -754,7 +754,7 @@ impl DavFileSystem for DavFs {
                 }
 
                 // file to file move - simple copy + delete
-                files_to_delete.push(*contents_from.id());
+                files_to_delete.push(contents_from.id());
                 self.copy(from, to).await?;
             }
 
