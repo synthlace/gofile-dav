@@ -2,7 +2,6 @@ use std::{
     collections::HashMap,
     io,
     pin::Pin,
-    result::Result as StdResult,
     sync::Arc,
     time::{Duration, UNIX_EPOCH},
 };
@@ -27,16 +26,18 @@ use tokio_stream::wrappers::ReceiverStream;
 
 use super::{
     Client, DirCache,
-    error::{Error, Result},
+    error::{GofileError, GofileResult},
     model::{Attribute, Contents as DirEntry, FileEntry, FileUploaded, FolderEntry},
 };
 
-impl From<Error> for FsError {
-    fn from(value: Error) -> Self {
+impl From<GofileError> for FsError {
+    fn from(value: GofileError) -> Self {
         match value {
-            Error::Io { source } => source.into(),
-            Error::NotFound => FsError::NotFound,
-            Error::Forbidden | Error::PasswordRequired | Error::PasswordWrong => FsError::Forbidden,
+            GofileError::Io { source } => source.into(),
+            GofileError::NotFound => FsError::NotFound,
+            GofileError::Forbidden | GofileError::PasswordRequired | GofileError::PasswordWrong => {
+                FsError::Forbidden
+            }
             _ => FsError::GeneralFailure,
         }
     }
@@ -67,7 +68,7 @@ pub struct BufferedStream<S> {
 
 impl<S> BufferedStream<S>
 where
-    S: Stream<Item = StdResult<Bytes, reqwest::Error>> + Unpin,
+    S: Stream<Item = Result<Bytes, reqwest::Error>> + Unpin,
 {
     pub fn new(stream: S) -> Self {
         Self {
@@ -76,7 +77,7 @@ where
         }
     }
 
-    pub async fn take_n_bytes(&mut self, n: usize) -> StdResult<Bytes, reqwest::Error> {
+    pub async fn take_n_bytes(&mut self, n: usize) -> Result<Bytes, reqwest::Error> {
         let mut result = BytesMut::with_capacity(n);
 
         while result.len() < n {
@@ -103,7 +104,7 @@ where
     }
 }
 
-type StreamResult = StdResult<Bytes, reqwest::Error>;
+type StreamResult = Result<Bytes, reqwest::Error>;
 type StreamType = Pin<Box<dyn Stream<Item = StreamResult> + Send>>;
 type StreamBuffer = BufferedStream<StreamType>;
 
@@ -111,6 +112,7 @@ struct DavFileRead {
     fs: DavFs,
     position: u64,
     file: FileEntry,
+    // Mutex is used here because it satisfies the Send + Sync bounds required by the FsDavFile trait
     stream_buffer: Mutex<Option<StreamBuffer>>,
 }
 
@@ -154,11 +156,11 @@ impl FsDavFile for DavFileRead {
                     .header(RANGE, range_header)
                     .send()
                     .await
-                    .map_err(Error::from)?
+                    .map_err(GofileError::from)?
                     .bytes_stream();
 
                 let boxed_stream: Pin<
-                    Box<dyn Stream<Item = StdResult<Bytes, reqwest::Error>> + Send>,
+                    Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>,
                 > = Box::pin(stream);
                 let buffered_stream = BufferedStream::new(boxed_stream);
 
@@ -172,7 +174,7 @@ impl FsDavFile for DavFileRead {
                 .unwrap()
                 .take_n_bytes(count)
                 .await
-                .map_err(Error::from)?;
+                .map_err(GofileError::from)?;
 
             self.position += bytes.len() as u64;
             Ok(bytes)
@@ -223,8 +225,8 @@ impl FsDavFile for DavFileRead {
 pub struct DavFileWrite {
     fs: DavFs,
     path: DavPath,
-    sender: Option<mpsc::Sender<StdResult<Bytes, io::Error>>>,
-    handle: Option<JoinHandle<Result<FileUploaded>>>,
+    sender: Option<mpsc::Sender<Result<Bytes, io::Error>>>,
+    handle: Option<JoinHandle<GofileResult<FileUploaded>>>,
 }
 
 impl std::fmt::Debug for DavFileWrite {
@@ -258,7 +260,8 @@ impl FsDavFile for DavFileWrite {
 
     fn write_buf(&mut self, mut buf: Box<dyn bytes::Buf + Send>) -> FsFuture<'_, ()> {
         async move {
-            // Wasn't able to hit it
+            // Wasn't able to hit it:
+            // dav_server uses type errasure to dispatch eithet on write_bytes or write_buf
 
             while buf.has_remaining() {
                 let chunk = buf.chunk();
@@ -275,7 +278,7 @@ impl FsDavFile for DavFileWrite {
     fn write_bytes(&'_ mut self, buf: bytes::Bytes) -> FsFuture<'_, ()> {
         async move {
             if self.sender.is_none() {
-                let (tx, rx) = mpsc::channel::<StdResult<Bytes, io::Error>>(1);
+                let (tx, rx) = mpsc::channel::<Result<Bytes, io::Error>>(1);
 
                 self.sender = Some(tx);
 
@@ -411,8 +414,8 @@ impl DavFs {
         Box::new(Self::new(client, dircache, write_enabled))
     }
 
-    async fn remove(&self, path: &DavPath, remove_dir: bool) -> Result<()> {
-        let contents = self.search(path).await?.ok_or(Error::NotFound)?;
+    async fn remove(&self, path: &DavPath, remove_dir: bool) -> GofileResult<()> {
+        let contents = self.search(path).await?.ok_or(GofileError::NotFound)?;
 
         match (&contents, remove_dir) {
             (DirEntry::File(_), false) => {
@@ -422,7 +425,7 @@ impl DavFs {
             }
             (DirEntry::Folder(folder_entry), true) => {
                 if !folder_entry.children.is_empty() {
-                    return Err(Error::Forbidden);
+                    return Err(GofileError::Forbidden);
                 }
 
                 self.client.delete_contents(&[contents.id()]).await?;
@@ -440,7 +443,7 @@ impl DavFs {
         }
     }
 
-    async fn search(&self, path: &DavPathRef) -> Result<Option<DirEntry>> {
+    async fn search(&self, path: &DavPathRef) -> GofileResult<Option<DirEntry>> {
         let mut path = path.as_url_string();
         path = if path.starts_with('/') {
             path
@@ -475,7 +478,7 @@ impl DavFs {
 
         if current_path == orig_path {
             let mut dir_guard = self.dircache.write().await;
-            let mut contents = self.client.get_contents(current_id).await?;
+            let mut contents = self.client.get_contents(current_id.as_str()).await?;
 
             if let DirEntry::Folder(ref mut folder) = contents {
                 let mut filtered_childs: HashMap<_, _> = HashMap::new();
@@ -512,10 +515,10 @@ impl DavFs {
             .filter(|s| !s.is_empty());
 
         for component in components {
-            let result = self.client.get_contents(&current_id).await;
+            let result = self.client.get_contents(current_id.as_str()).await;
             let contents = match result {
                 Ok(contents) => contents,
-                Err(Error::NotFound) => return Ok(None),
+                Err(GofileError::NotFound) => return Ok(None),
                 Err(e) => return Err(e),
             };
 
@@ -562,8 +565,8 @@ impl DavFs {
         Ok(None)
     }
 
-    async fn try_find_folder(&self, path: &DavPathRef) -> Result<FolderEntry> {
-        let contents = self.search(path).await?.ok_or(Error::NotFound)?;
+    async fn try_find_folder(&self, path: &DavPathRef) -> GofileResult<FolderEntry> {
+        let contents = self.search(path).await?.ok_or(GofileError::NotFound)?;
 
         match contents {
             DirEntry::Folder(folder_entry) => Ok(folder_entry),
@@ -575,8 +578,8 @@ impl DavFs {
         }
     }
 
-    async fn try_find_file(&self, path: &DavPathRef) -> Result<FileEntry> {
-        let contents = self.search(path).await?.ok_or(Error::NotFound)?;
+    async fn try_find_file(&self, path: &DavPathRef) -> GofileResult<FileEntry> {
+        let contents = self.search(path).await?.ok_or(GofileError::NotFound)?;
 
         match contents {
             DirEntry::File(file_entry) => Ok(file_entry),

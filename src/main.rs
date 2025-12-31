@@ -17,7 +17,7 @@ use dav_server::{
     ls::DavLockSystem,
     memls::MemLs,
 };
-use gofile::{Client, DavFs, DirCache, error::Error, model::Contents};
+use gofile::{Client, DavFs, DirCache, error::GofileError, model::Contents};
 use log::{info, warn};
 use tokio::sync::RwLock;
 
@@ -31,7 +31,7 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Command {
     #[command(group(
-        ArgGroup::new("auth")
+        ArgGroup::new("id_or_auth")
         .args(&["root_id", "api_token"])
         .required(true)
         .multiple(true)
@@ -104,7 +104,7 @@ impl TryFrom<Command> for Config {
     }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     if let Command::Upgrade = cli.command {
@@ -113,7 +113,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     env_logger::init_from_env(Env::default().default_filter_or("info"));
 
-    let config = Config::try_from(cli.command)?;
+    let config = Config::try_from(cli.command).map_err(|err| anyhow::anyhow!(err))?;
     run(config)?;
 
     Ok(())
@@ -150,7 +150,7 @@ async fn run(config: Config) -> anyhow::Result<()> {
             .to_string()
     };
 
-    let root_id = match client.get_contents(&root_id).await {
+    let root_id = match client.get_contents(root_id.as_str()).await {
         Ok(contents) => match contents {
             Contents::File(file) => bail!("Expected folder but got file {}", file.id),
             Contents::Folder(folder) => {
@@ -165,7 +165,7 @@ async fn run(config: Config) -> anyhow::Result<()> {
                 folder.code
             }
         },
-        Err(Error::NotFound) => bail!("Contents not found {}", root_id),
+        Err(GofileError::NotFound) => bail!("Contents not found {}", root_id),
         Err(e) => return Err(e.into()),
     };
 

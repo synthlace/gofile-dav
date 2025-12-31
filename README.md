@@ -40,11 +40,12 @@ A **quota bypass** is available to help with download limits for free/guest user
 
 ### Serve with write mode enabled
 
-**Warning:** The implementation supports most expected write-related features, with the following limitations:
-
--   MOVE operations for folders (e.g., cut + paste) are not supported
--   Seeking during writes is not possible
--   Append mode is unsupported
+> [!WARNING]  
+> The implementation supports most expected write-related features, with the following limitations:
+>
+> -   MOVE operations for folders (e.g., cut + paste) are not supported
+> -   Seeking during writes is not possible
+> -   Append mode is unsupported
 
 **Implemented write features**
 
@@ -59,7 +60,8 @@ A **quota bypass** is available to help with download limits for free/guest user
 gofile-dav serve -m read-write --api-token Maie2RlOFDDDRao0Y5ll54EAtv2imUlZ
 ```
 
-**Note**: for improved reliability and to overcome the mentioned limitations, use a filesystem cache layer such as `rclone` with `--vfs-cache-mode writes` or `--vfs-cache-mode full`.
+> [!TIP]  
+For improved reliability use a filesystem cache layer such as `rclone` with `--vfs-cache-mode writes` or `--vfs-cache-mode full`.
 
 ### Upgrade
 
@@ -74,8 +76,8 @@ gofile-dav serve -m read-write --api-token Maie2RlOFDDDRao0Y5ll54EAtv2imUlZ
     gofile-dav serve Veil7n --bypass
 
 ### Serve your root folder with bypass
-
-**Warning:** To use the bypass on your own folder you must make the folder public!
+> [!WARNING]  
+To use the bypass on your own folder you must make the folder public!
 
     gofile-dav serve --bypass --api-token Maie2RlOFDDDRao0Y5ll54EAtv2imUlZ
 

@@ -1,6 +1,6 @@
-use std::{collections::HashMap, result::Result as StdResult, str::FromStr};
+use std::{collections::HashMap, str::FromStr};
 
-use super::error::{Error, Result as GofileResult};
+use super::error::{GofileError, GofileResult};
 use serde::{Deserialize, Deserializer, Serialize, de};
 use url::Url;
 use uuid::Uuid;
@@ -23,7 +23,7 @@ impl std::fmt::Display for IdOrCode {
 impl FromStr for IdOrCode {
     type Err = std::convert::Infallible;
 
-    fn from_str(s: &str) -> StdResult<Self, Self::Err> {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match Uuid::parse_str(s) {
             Ok(uuid) => Ok(Self::Uuid4 { uuid }),
             Err(_) => Ok(Self::Code { code: s.to_owned() }),
@@ -31,20 +31,9 @@ impl FromStr for IdOrCode {
     }
 }
 
-// TODO?: Consider refactoring all IDs to `IdOrCode`.
-// These `From` impls exist to allow passing strings or references into functions
-// expecting `Into<IdOrCode>` without refactoring all existing IDs. They make
-// the API flexible for both `String`, `&str`, and `&IdOrCode` inputs.
-
 impl From<Uuid> for IdOrCode {
     fn from(uuid: Uuid) -> Self {
         IdOrCode::Uuid4 { uuid }
-    }
-}
-
-impl From<&Uuid> for IdOrCode {
-    fn from(uuid: &Uuid) -> Self {
-        IdOrCode::Uuid4 { uuid: *uuid }
     }
 }
 
@@ -56,18 +45,6 @@ impl From<&IdOrCode> for IdOrCode {
 
 impl From<&str> for IdOrCode {
     fn from(s: &str) -> Self {
-        Self::from_str(s).unwrap()
-    }
-}
-
-impl From<String> for IdOrCode {
-    fn from(s: String) -> Self {
-        Self::from_str(&s).unwrap()
-    }
-}
-
-impl From<&String> for IdOrCode {
-    fn from(s: &String) -> Self {
         Self::from_str(s).unwrap()
     }
 }
@@ -87,17 +64,17 @@ impl<T> ApiResponse<T> {
     pub fn into_result(self) -> GofileResult<T> {
         match self {
             ApiResponse::Ok { data } => Ok(data),
-            ApiResponse::NotFound => Err(Error::NotFound),
-            ApiResponse::RateLimit => Err(Error::Api {
+            ApiResponse::NotFound => Err(GofileError::NotFound),
+            ApiResponse::RateLimit => Err(GofileError::Api {
                 status: "error-rateLimit".into(),
             }),
-            ApiResponse::InvalidToken => Err(Error::Api {
+            ApiResponse::InvalidToken => Err(GofileError::Api {
                 status: "error-token".into(),
             }),
-            ApiResponse::NotPremium => Err(Error::Api {
+            ApiResponse::NotPremium => Err(GofileError::Api {
                 status: "error-notPremium".into(),
             }),
-            ApiResponse::Other { status } => Err(Error::Api { status }),
+            ApiResponse::Other { status } => Err(GofileError::Api { status }),
         }
     }
 }
@@ -191,13 +168,6 @@ impl Contents {
         }
     }
 }
-
-// #[derive(Debug, Clone, Serialize, Deserialize)]
-// pub struct AccountId {
-//     pub id: String,
-// }
-
-// pub type AccountIdResponse = ApiResponse<AccountId>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -318,15 +288,15 @@ pub enum ContentsRestricted {
 }
 
 impl ContentsRestricted {
-    pub fn into_err(self) -> Error {
+    pub fn into_err(self) -> GofileError {
         let password_status = match self {
             ContentsRestricted::File(file) => file.password_status,
             ContentsRestricted::Folder(folder) => folder.password_status,
         };
 
         match password_status {
-            PasswordStatus::PasswordRequired => Error::PasswordRequired,
-            PasswordStatus::PasswordWrong => Error::PasswordWrong,
+            PasswordStatus::PasswordRequired => GofileError::PasswordRequired,
+            PasswordStatus::PasswordWrong => GofileError::PasswordWrong,
         }
     }
 }
@@ -396,10 +366,6 @@ impl<'de> Deserialize<'de> for ContentsWithPassword {
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FolderEntry {
-    // #[serde(default = "_default_true")]
-    // pub is_dir: bool,
-    // pub total_download_count: u64,
-    // pub children_count: i64,
     pub can_access: bool,
     pub id: Uuid,
     pub name: String,
@@ -422,10 +388,6 @@ pub struct FolderEntry {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FolderEntryOk {
-    // #[serde(default = "_default_true")]
-    // pub is_dir: bool,
-    // pub total_download_count: u64,
-    // pub children_count: i64,
     pub can_access: bool,
     pub id: Uuid,
     pub name: String,
@@ -567,6 +529,8 @@ pub struct DeleteContentsPayload<'a> {
 pub type DeletedContents = HashMap<String, ApiResponse>;
 pub type DeleteContentsResponse = ApiResponse<DeletedContents>;
 
+// TODO: The API currently allows requesting an arbitrary number of items per page, but this may change.
+
 // #[derive(Debug, Serialize, Deserialize)]
 // #[serde(rename_all = "camelCase")]
 // pub struct Metadata {
@@ -643,8 +607,6 @@ mod test {
         assert_eq!(folder_ok.public, false);
         assert_eq!(folder_ok.total_size, 0);
         assert!(folder_ok.children.is_empty());
-        // assert_eq!(folder.children_count, 0);
-        // assert_eq!(folder.total_download_count, 0);
     }
 
     #[test]

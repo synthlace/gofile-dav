@@ -1,9 +1,11 @@
 use thiserror::Error;
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type GofileResult<T> = std::result::Result<T, GofileError>;
+
+// TODO: Add more context to error messages and improve structured logging overall.
 
 #[derive(Error, Debug)]
-pub enum Error {
+pub enum GofileError {
     #[error("an HTTP error occurred")]
     Http {
         #[from]
@@ -30,7 +32,7 @@ pub enum Error {
     Unexpected(#[from] anyhow::Error),
 }
 
-impl From<reqwest::Error> for Error {
+impl From<reqwest::Error> for GofileError {
     fn from(value: reqwest::Error) -> Self {
         reqwest_middleware::Error::from(value).into()
     }
