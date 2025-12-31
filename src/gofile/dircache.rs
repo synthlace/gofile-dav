@@ -17,12 +17,6 @@ impl<T> DirCache<T> {
         self.cache.get(path.as_ref())
     }
 
-    #[allow(unused)]
-    pub fn find_root(&self) -> &T {
-        self.find_dir(ROOT_DIR)
-            .expect("rootId not found in directory tree")
-    }
-
     pub fn insert_dir(&mut self, path: impl Into<String>, value: T) -> Option<T> {
         self.cache.insert(path.into(), value)
     }

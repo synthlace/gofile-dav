@@ -1,7 +1,7 @@
-use std::{collections::HashMap, result::Result as StdResult, time::Duration};
+use std::{collections::HashMap, time::Duration};
 
 use super::{
-    error::{Error, Result},
+    error::{GofileError, GofileResult},
     model::{
         AccountInfo, AccountInfoResponse, Attribute, BypassFiles, BypassFilesResponse, Contents,
         ContentsOk, ContentsRestricted, ContentsUdpated, ContentsUdpatedResponse,
@@ -61,12 +61,6 @@ impl ClientBuilder {
             password: None,
             bypass: false,
         }
-    }
-
-    #[allow(unused)]
-    pub fn with_client(mut self, client: RqwClient) -> Self {
-        self.client = Some(client);
-        self
     }
 
     pub fn with_token(mut self, token: impl Into<String>) -> Self {
@@ -139,7 +133,7 @@ impl Client {
         method: Method,
         url: impl IntoUrl,
         bypassed: bool,
-    ) -> Result<RequestBuilder> {
+    ) -> GofileResult<RequestBuilder> {
         let mut builder = self
             .client
             .request(method, url)
@@ -156,7 +150,7 @@ impl Client {
         &self,
         method: Method,
         path: impl AsRef<str>,
-    ) -> Result<RequestBuilder> {
+    ) -> GofileResult<RequestBuilder> {
         let api_token = self.get_or_create_guest_token().await?;
 
         Ok(self
@@ -166,7 +160,7 @@ impl Client {
             .bearer_auth(api_token))
     }
 
-    pub async fn get_current_account_info(&self) -> Result<AccountInfo> {
+    pub async fn get_current_account_info(&self) -> GofileResult<AccountInfo> {
         self.auth_request_builder(Method::GET, "/accounts/website")
             .await?
             .send()
@@ -176,7 +170,7 @@ impl Client {
             .into_result()
     }
 
-    pub async fn get_wt_token(&self) -> Result<&'static str> {
+    pub async fn get_wt_token(&self) -> GofileResult<&'static str> {
         WT_TOKEN
             .get_or_try_init(|| async {
                 self.client
@@ -190,13 +184,13 @@ impl Client {
                     .nth(1)
                     .and_then(|s| s.split('"').next())
                     .map(|s| s.to_string())
-                    .ok_or_else(|| Error::ParseTokenFailed)
+                    .ok_or_else(|| GofileError::ParseTokenFailed)
             })
             .await
             .map(|s| s.as_ref())
     }
 
-    async fn get_contents_inner(&self, content_id: impl Into<IdOrCode>) -> Result<Contents> {
+    async fn get_contents_inner(&self, content_id: impl Into<IdOrCode>) -> GofileResult<Contents> {
         let wt_token = self.get_wt_token().await?;
         let content_id = content_id.into();
 
@@ -303,7 +297,7 @@ impl Client {
     }
 
     #[async_recursion]
-    pub async fn get_contents<T>(&self, content_id: T) -> Result<Contents>
+    pub async fn get_contents<T>(&self, content_id: T) -> GofileResult<Contents>
     where
         T: Into<IdOrCode> + Send,
     {
@@ -404,7 +398,7 @@ impl Client {
         }
     }
 
-    pub async fn create_guest_account(&self) -> Result<CreateGuestAccount> {
+    pub async fn create_guest_account(&self) -> GofileResult<CreateGuestAccount> {
         self.client
             .request(Method::POST, format!("{API_BASE_URL}/accounts"))
             .header(REFERER, REFERER_HEADER)
@@ -415,7 +409,7 @@ impl Client {
             .into_result()
     }
 
-    pub async fn get_or_create_guest_token(&self) -> Result<String> {
+    pub async fn get_or_create_guest_token(&self) -> GofileResult<String> {
         self.api_token
             .get_or_try_init(|| async {
                 let token = self.create_guest_account().await?.token;
@@ -429,7 +423,7 @@ impl Client {
         &self,
         parrent_id: impl Into<IdOrCode>,
         file_part: Part,
-    ) -> Result<RqwRequestBuilder> {
+    ) -> GofileResult<RqwRequestBuilder> {
         let parrent_id = parrent_id.into();
         let api_token = self.get_or_create_guest_token().await?;
 
@@ -449,7 +443,7 @@ impl Client {
         &self,
         parrent_id: impl Into<IdOrCode>,
         file_part: Part,
-    ) -> Result<FileUploaded> {
+    ) -> GofileResult<FileUploaded> {
         self.request_builder_for_upload(parrent_id, file_part)
             .await?
             .send()
@@ -463,7 +457,7 @@ impl Client {
         &self,
         parrent_id: impl Into<IdOrCode>,
         folder_name: impl AsRef<str>,
-    ) -> Result<FolderCreated> {
+    ) -> GofileResult<FolderCreated> {
         let parent_id = parrent_id.into().to_string();
         let payload = CreateFolderPayload {
             parent_folder_id: parent_id.as_ref(),
@@ -484,7 +478,7 @@ impl Client {
         &self,
         content_id: impl Into<IdOrCode>,
         attribute: Attribute<'_>,
-    ) -> Result<ContentsUdpated> {
+    ) -> GofileResult<ContentsUdpated> {
         let content_id = content_id.into();
 
         self.auth_request_builder(Method::PUT, format!("/contents/{content_id}/update"))
@@ -497,7 +491,7 @@ impl Client {
             .into_result()
     }
 
-    pub async fn delete_contents<T, U>(&self, content_ids: T) -> Result<DeletedContents>
+    pub async fn delete_contents<T, U>(&self, content_ids: T) -> GofileResult<DeletedContents>
     where
         T: AsRef<[U]>,
         U: Into<IdOrCode> + Clone,
@@ -524,7 +518,7 @@ impl Client {
             .into_result()
     }
 
-    pub async fn get_bypass_files(&self, id: impl AsRef<str>) -> Result<BypassFiles> {
+    pub async fn get_bypass_files(&self, id: impl AsRef<str>) -> GofileResult<BypassFiles> {
         for _ in 0..BYPASS_GAMBLE_MAX_RETRIES {
             let resp = self
                 .client
@@ -554,18 +548,5 @@ impl Client {
             id.as_ref()
         )
         .into())
-    }
-
-    #[allow(unused)]
-    pub fn get_api_token(&self) -> Option<&str> {
-        self.api_token.get().map(|s| s.as_str())
-    }
-
-    #[allow(unused)]
-    pub async fn execute(
-        &self,
-        req: reqwest::Request,
-    ) -> StdResult<reqwest::Response, reqwest_middleware::Error> {
-        self.client.execute(req).await
     }
 }
