@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.8](https://github.com/synthlace/gofile-dav/compare/v0.1.7...v0.1.8) - 2025-12-31
+
+### Other
+
+- miscellaneous improvements ([#16](https://github.com/synthlace/gofile-dav/pull/16))
+
 ## [0.1.7](https://github.com/synthlace/gofile-dav/compare/v0.1.6...v0.1.7) - 2025-12-12
 
 ### Fixed
