@@ -18,8 +18,6 @@ pub enum GofileError {
     },
     #[error("API returned an error: {status}")]
     Api { status: String },
-    #[error("failed to parse wt token from JS")]
-    ParseTokenFailed,
     #[error("password required")]
     PasswordRequired,
     #[error("password wrong")]

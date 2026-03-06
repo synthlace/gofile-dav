@@ -55,7 +55,7 @@ tokio-stream = "0.1"
 url = "2"
 clap = { version = "4", features = ["derive", "env"] }
 uuid = { version = "1", features = ["v4", "serde"] }
-sha256 = { version = "1.6", default-features = false }
+sha2 = "0.10"
 
 [dev-dependencies]
 rstest = "0.26"

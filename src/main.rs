@@ -19,6 +19,7 @@ use dav_server::{
 };
 use gofile::{Client, DavFs, DirCache, error::GofileError, model::Contents};
 use log::{info, warn};
+use sha2::{Digest, Sha256};
 use tokio::sync::RwLock;
 
 #[derive(Parser, Debug)]
@@ -62,6 +63,10 @@ enum Command {
         #[arg(long, short = 'H', env, default_value = "127.0.0.1")]
         host: String,
 
+        /// User agent
+        #[arg(long, short = 'U', env)]
+        user_agent: Option<String>,
+
         /// Use public service gofile-bypass.cybar.xyz for downloads
         #[arg(long, short, env)]
         bypass: bool,
@@ -87,6 +92,7 @@ impl TryFrom<Command> for Config {
                 root_id,
                 port,
                 host,
+                user_agent,
                 bypass,
                 password,
                 mode,
@@ -95,8 +101,9 @@ impl TryFrom<Command> for Config {
                 api_token,
                 port,
                 host,
+                user_agent,
                 bypass,
-                password: password.map(sha256::digest),
+                password: password.map(|p| format!("{:x}", Sha256::digest(&p))),
                 write_enabled: matches!(mode, Mode::ReadWrite),
             }),
             Command::Upgrade => Err("Cannot create Config from Upgrade command"),
@@ -133,6 +140,10 @@ async fn run(config: Config) -> anyhow::Result<()> {
 
     if let Some(password) = config.password.clone() {
         client = client.with_password(password)
+    }
+
+    if let Some(user_agent) = config.user_agent.clone() {
+        client = client.with_user_agent(user_agent)
     }
 
     let client = client.build();

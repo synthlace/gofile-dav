@@ -4,6 +4,7 @@ pub struct Config {
     pub api_token: Option<String>,
     pub port: u16,
     pub host: String,
+    pub user_agent: Option<String>,
     pub bypass: bool,
     pub password: Option<String>,
     pub write_enabled: bool,

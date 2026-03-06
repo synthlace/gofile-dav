@@ -10,6 +10,7 @@ use super::{
         DeleteContentsResponse, DeletedContents, FileUploaded, FileUploadedResponse, FolderCreated,
         FolderCreatedResponse, IdOrCode,
     },
+    wt_generator::WtGenerator,
 };
 
 use anyhow::{Context, anyhow};
@@ -17,7 +18,7 @@ use async_recursion::async_recursion;
 use log::{error, warn};
 use reqwest::{
     Client as RqwClient, IntoUrl, Method, RequestBuilder as RqwRequestBuilder,
-    header::REFERER,
+    header::{REFERER, USER_AGENT},
     multipart::{Form, Part},
 };
 use reqwest_middleware::{
@@ -30,7 +31,6 @@ const API_BASE_URL: &str = "https://api.gofile.io";
 const API_BASE_UPLOAD_URL: &str = "https://upload.gofile.io";
 const DEFAULT_MAX_RETRIES: u32 = 10;
 const REFERER_HEADER: &str = "https://gofile.io/";
-const GOFILE_JS_WT_URL: &str = "https://gofile.io/dist/js/config.js";
 // JS Number.MAX_SAFE_INTEGER
 const DEFAULT_PAGE_SIZE: &str = "9007199254740991";
 
@@ -38,12 +38,14 @@ const BYPASS_API_URL: &str = "https://gf.1drv.eu.org";
 const BYPASS_GAMBLE_MAX_RETRIES: u32 = 10;
 const BROKEN_BYPASS_PROXY_URL_HOSTS: &[&str] = &["gf.cybar.xyz"];
 
-static WT_TOKEN: OnceCell<String> = OnceCell::const_new();
+const DEFAULT_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36";
+const DEFAULT_LANG: &str = "en-US";
 
 pub struct ClientBuilder {
     client: Option<RqwClient>,
     api_token: Option<String>,
     password: Option<String>,
+    user_agent: Option<String>,
     bypass: bool,
 }
 
@@ -59,12 +61,18 @@ impl ClientBuilder {
             client: None,
             api_token: None,
             password: None,
+            user_agent: None,
             bypass: false,
         }
     }
 
     pub fn with_token(mut self, token: impl Into<String>) -> Self {
         self.api_token = Some(token.into());
+        self
+    }
+
+    pub fn with_user_agent(mut self, user_agent: impl Into<String>) -> Self {
+        self.user_agent = Some(user_agent.into());
         self
     }
 
@@ -90,6 +98,16 @@ impl ClientBuilder {
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
             .build();
 
+        // TODO?: add CLI arg?
+        let lang = DEFAULT_LANG.to_string();
+        let user_agent = self.user_agent.unwrap_or(DEFAULT_USER_AGENT.to_string());
+
+        let wt_generator = if let Some(token) = self.api_token.as_deref() {
+            OnceCell::new_with(Some(WtGenerator::new(token, &user_agent, &lang)))
+        } else {
+            OnceCell::new_with(None)
+        };
+
         let api_token = OnceCell::new_with(self.api_token);
 
         let password = self.password;
@@ -97,6 +115,9 @@ impl ClientBuilder {
         Client {
             raw_client,
             client,
+            lang,
+            user_agent,
+            wt_generator,
             api_token,
             password,
             use_bypass: self.bypass,
@@ -108,6 +129,9 @@ impl ClientBuilder {
 pub struct Client {
     raw_client: RqwClient,
     client: ClientWithMiddleware,
+    user_agent: String,
+    lang: String,
+    wt_generator: OnceCell<WtGenerator>,
     api_token: OnceCell<String>,
     password: Option<String>,
     use_bypass: bool,
@@ -157,6 +181,7 @@ impl Client {
             .client
             .request(method, format!("{API_BASE_URL}{}", path.as_ref()))
             .header(REFERER, REFERER_HEADER)
+            .header(USER_AGENT, &self.user_agent)
             .bearer_auth(api_token))
     }
 
@@ -170,24 +195,18 @@ impl Client {
             .into_result()
     }
 
-    pub async fn get_wt_token(&self) -> GofileResult<&'static str> {
-        WT_TOKEN
+    pub async fn get_wt_token(&self) -> GofileResult<String> {
+        self.wt_generator
             .get_or_try_init(|| async {
-                self.client
-                    .get(GOFILE_JS_WT_URL)
-                    .header(REFERER, REFERER_HEADER)
-                    .send()
-                    .await?
-                    .text()
-                    .await?
-                    .split("appdata.wt = \"")
-                    .nth(1)
-                    .and_then(|s| s.split('"').next())
-                    .map(|s| s.to_string())
-                    .ok_or_else(|| GofileError::ParseTokenFailed)
+                let api_token = self.get_or_create_guest_token().await?;
+                Ok::<WtGenerator, GofileError>(WtGenerator::new(
+                    &api_token,
+                    &self.user_agent,
+                    &self.lang,
+                ))
             })
             .await
-            .map(|s| s.as_ref())
+            .map(|wt_gn| wt_gn.generate_current())
     }
 
     async fn get_contents_inner(&self, content_id: impl Into<IdOrCode>) -> GofileResult<Contents> {
@@ -205,6 +224,7 @@ impl Client {
             .auth_request_builder(Method::GET, format!("/contents/{}", content_id))
             .await?
             .header("X-Website-Token", wt_token)
+            .header("X-Bl", &self.lang)
             .query(&params)
             .send()
             .await?
