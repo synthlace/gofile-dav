@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.9](https://github.com/synthlace/gofile-dav/compare/v0.1.8...v0.1.9) - 2026-03-06
+
+### Fixed
+
+- update client to use new wt token handling + new `user-agent` arg ([#18](https://github.com/synthlace/gofile-dav/pull/18))
+
 ## [0.1.8](https://github.com/synthlace/gofile-dav/compare/v0.1.7...v0.1.8) - 2025-12-31
 
 ### Other
