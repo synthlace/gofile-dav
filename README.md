@@ -43,25 +43,25 @@ A **quota bypass** is available to help with download limits for free/guest user
 > [!WARNING]  
 > The implementation supports most expected write-related features, with the following limitations:
 >
-> -   MOVE operations for folders (e.g., cut + paste) are not supported
-> -   Seeking during writes is not possible
-> -   Append mode is unsupported
+> - MOVE operations for folders (e.g., cut + paste) are not supported
+> - Seeking during writes is not possible
+> - Append mode is unsupported
 
 **Implemented write features**
 
--   Create folders
--   Upload files
--   Delete files and folders
--   Copy files and folders
--   Rename files and folders
--   Move files (does not work on folders)
+- Create folders
+- Upload files
+- Delete files and folders
+- Copy files and folders
+- Rename files and folders
+- Move files (does not work on folders)
 
 ```bash
 gofile-dav serve -m read-write --api-token Maie2RlOFDDDRao0Y5ll54EAtv2imUlZ
 ```
 
 > [!TIP]  
-For improved reliability use a filesystem cache layer such as `rclone` with `--vfs-cache-mode writes` or `--vfs-cache-mode full`.
+> For improved reliability use a filesystem cache layer such as `rclone` with `--vfs-cache-mode writes` or `--vfs-cache-mode full`.
 
 ### Upgrade
 
@@ -76,8 +76,9 @@ For improved reliability use a filesystem cache layer such as `rclone` with `--v
     gofile-dav serve Veil7n --bypass
 
 ### Serve your root folder with bypass
+
 > [!WARNING]  
-To use the bypass on your own folder you must make the folder public!
+> To use the bypass on your own folder you must make the folder public!
 
     gofile-dav serve --bypass --api-token Maie2RlOFDDDRao0Y5ll54EAtv2imUlZ
 
@@ -111,11 +112,12 @@ Arguments:
   [ROOT_ID]  Root folder ID [env: ROOT_ID=]
 
 Options:
-  -t, --api-token <API_TOKEN>  Gofile API token [env: API_TOKEN=]
-  -P, --password <PASSWORD>    Root password [env: PASSWORD=]
-  -m, --mode <MODE>            Mode [env: MODE=] [default: read-only] [possible values: read-only, read-write]
-  -p, --port <PORT>            Port for the application [env: PORT=] [default: 4914]
-  -H, --host <HOST>            Host for the application [env: HOST=] [default: 127.0.0.1]
-  -b, --bypass                 Use public service gofile-bypass.cybar.xyz for downloads [env: BYPASS=]
-  -h, --help                   Print help
+  -t, --api-token <API_TOKEN>    Gofile API token [env: API_TOKEN=]
+  -P, --password <PASSWORD>      Root password [env: PASSWORD=]
+  -m, --mode <MODE>              Mode [env: MODE=] [default: read-only] [possible values: read-only, read-write]
+  -p, --port <PORT>              Port for the application [env: PORT=] [default: 4914]
+  -H, --host <HOST>              Host for the application [env: HOST=] [default: 127.0.0.1]
+  -U, --user-agent <USER_AGENT>  User agent [env: USER_AGENT=]
+  -b, --bypass                   Use public service gofile-bypass.cybar.xyz for downloads [env: BYPASS=]
+  -h, --help                     Print help
 ```
