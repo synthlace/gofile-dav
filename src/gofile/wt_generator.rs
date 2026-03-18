@@ -1,7 +1,7 @@
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const MAGIC_SUFFIX: &str = "gf2026x";
+const MAGIC_SUFFIX: &str = "f4s58gs6";
 
 #[derive(Clone)]
 pub struct WtGenerator {
@@ -67,7 +67,7 @@ mod tests {
         let generator = WtGenerator::new(token, user_agent, language);
 
         let fixed_timestamp = 1_772_811_652u64;
-        let expected_hash = "71f64a2e59c39f09de09ccc12d5d53ef036be22e1a2780169de8ac5fa1f34076";
+        let expected_hash = "a0368853c5fdc3815c561070407da11f528d72456f74fa933fa32b4a999c1dfd";
 
         assert_eq!(
             generator.generate_with_mocked_time(|| fixed_timestamp),
