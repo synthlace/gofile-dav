@@ -1,8 +1,12 @@
 use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const MAGIC_SUFFIX: &str = "f4s58gs6";
-
+// TODO: random magic suffix changes at random times, sometimes a week, sometimes more.
+// Soooo we need to implement some kind of "fallback" mechanism and sup port extra fetchers.
+// 1. Add CLI arg for magic suffix
+// 2. Implement simple service that will yield valid magic suffixes
+// 3. Implement module with some JS runtime (mb rquickjs) and evaluate magic in there, but wt.obf.js has a decent anti-tampering mechanism
+const MAGIC_SUFFIX: &str = "5d4f7g8sd45fsd";
 #[derive(Clone)]
 pub struct WtGenerator {
     base_hasher: Sha256,
@@ -67,7 +71,7 @@ mod tests {
         let generator = WtGenerator::new(token, user_agent, language);
 
         let fixed_timestamp = 1_772_811_652u64;
-        let expected_hash = "a0368853c5fdc3815c561070407da11f528d72456f74fa933fa32b4a999c1dfd";
+        let expected_hash = "cf132b6c2ab66415d2aaabe7008eefd085c942f276d7f5670dfc010e13d6ed40";
 
         assert_eq!(
             generator.generate_with_mocked_time(|| fixed_timestamp),
